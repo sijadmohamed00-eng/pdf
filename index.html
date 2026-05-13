@@ -1,0 +1,946 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>OCR Enterprise — PDF to Word</title>
+
+<!-- Google Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet"/>
+
+<!-- PDF.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+<!-- Tesseract.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.0.4/tesseract.min.js"></script>
+
+<!-- docx.js (generate Word files) -->
+<script src="https://unpkg.com/docx@8.5.0/build/index.js"></script>
+
+<!-- FileSaver.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+
+<style>
+/* ══════════════════════════════════════════════
+   TOKENS
+══════════════════════════════════════════════ */
+:root {
+  --bg:       #08090d;
+  --s1:       #0e1117;
+  --s2:       #141822;
+  --s3:       #1a2030;
+  --border:   #1e2840;
+  --border2:  #2a3655;
+  --cyan:     #00d4ff;
+  --cyan2:    #0088cc;
+  --gold:     #f5a623;
+  --green:    #00e87a;
+  --red:      #ff3d5a;
+  --text:     #dde4f0;
+  --text2:    #7a8eaa;
+  --text3:    #3d4f68;
+  --mono:     'Space Mono', monospace;
+  --ar:       'IBM Plex Sans Arabic', sans-serif;
+  --r:        10px;
+  --r2:       6px;
+}
+
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+
+body{
+  font-family:var(--ar);
+  background:var(--bg);
+  color:var(--text);
+  min-height:100vh;
+  overflow-x:hidden;
+}
+
+/* animated grid bg */
+body::before{
+  content:'';
+  position:fixed;inset:0;z-index:0;
+  background-image:
+    linear-gradient(rgba(0,212,255,.025) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(0,212,255,.025) 1px,transparent 1px);
+  background-size:56px 56px;
+  animation:gridMove 20s linear infinite;
+  pointer-events:none;
+}
+@keyframes gridMove{
+  0%{background-position:0 0}
+  100%{background-position:56px 56px}
+}
+
+/* glow orb */
+body::after{
+  content:'';
+  position:fixed;
+  width:600px;height:600px;
+  top:-200px;left:50%;transform:translateX(-50%);
+  background:radial-gradient(ellipse,rgba(0,136,204,.12) 0%,transparent 70%);
+  pointer-events:none;z-index:0;
+}
+
+.wrap{
+  position:relative;z-index:1;
+  max-width:900px;
+  margin:0 auto;
+  padding:0 20px 80px;
+}
+
+/* ══ HEADER ══ */
+header{
+  padding:50px 0 30px;
+  text-align:center;
+}
+.logo{
+  display:inline-flex;align-items:center;gap:16px;
+  background:linear-gradient(135deg,var(--s2),var(--s1));
+  border:1px solid var(--border2);
+  border-radius:16px;
+  padding:20px 36px;
+  margin-bottom:24px;
+  box-shadow:0 0 40px rgba(0,212,255,.1);
+}
+.logo-icon{
+  width:50px;height:50px;
+  background:linear-gradient(135deg,var(--cyan2),var(--cyan));
+  border-radius:12px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:24px;
+  box-shadow:0 4px 20px rgba(0,212,255,.3);
+}
+.logo h1{font-size:1.5rem;font-weight:700;letter-spacing:-.3px}
+.logo span{font-size:.72rem;color:var(--text2);font-family:var(--mono)}
+
+.tagline{font-size:.88rem;color:var(--text2);max-width:520px;margin:0 auto 20px}
+
+.badges{display:flex;justify-content:center;gap:8px;flex-wrap:wrap}
+.badge{
+  font-size:.68rem;font-family:var(--mono);
+  padding:4px 12px;border-radius:20px;
+  border:1px solid var(--border2);
+  color:var(--text2);background:var(--s2);
+}
+.badge.c{border-color:var(--cyan);color:var(--cyan)}
+.badge.g{border-color:var(--gold);color:var(--gold)}
+.badge.gr{border-color:var(--green);color:var(--green)}
+
+/* ══ CARDS ══ */
+.card{
+  background:var(--s1);
+  border:1px solid var(--border);
+  border-radius:var(--r);
+  padding:26px;
+  margin-bottom:18px;
+  transition:border-color .2s;
+}
+.card.glow{border-color:var(--cyan2);box-shadow:0 0 30px rgba(0,136,204,.12)}
+.card:hover{border-color:var(--border2)}
+
+.ch{
+  display:flex;align-items:center;gap:12px;
+  padding-bottom:18px;margin-bottom:20px;
+  border-bottom:1px solid var(--border);
+}
+.ci{
+  width:34px;height:34px;border-radius:8px;
+  background:var(--s2);border:1px solid var(--border2);
+  display:flex;align-items:center;justify-content:center;font-size:15px;
+}
+.ct{font-size:.95rem;font-weight:600}
+.cs{font-size:.72rem;color:var(--text2);font-family:var(--mono)}
+
+/* ══ DROP ZONE ══ */
+.dz{
+  border:2px dashed var(--border2);
+  border-radius:var(--r);
+  padding:54px 20px;
+  text-align:center;
+  cursor:pointer;
+  transition:all .25s;
+  position:relative;overflow:hidden;
+}
+.dz::before{
+  content:'';position:absolute;inset:0;
+  background:radial-gradient(ellipse at 50% 0%,rgba(0,212,255,.04),transparent 65%);
+  pointer-events:none;
+}
+.dz:hover,.dz.over{
+  border-color:var(--cyan);
+  background:rgba(0,212,255,.025);
+  box-shadow:0 0 30px rgba(0,212,255,.1);
+}
+.dz-icon{font-size:44px;display:block;margin-bottom:14px}
+.dz-label{font-size:1rem;font-weight:600;margin-bottom:6px}
+.dz-hint{font-size:.8rem;color:var(--text2)}
+.dz-note{font-size:.7rem;color:var(--text3);margin-top:6px;font-family:var(--mono)}
+#fi{display:none}
+
+/* ══ FILE ROW ══ */
+.frow{
+  display:flex;align-items:center;gap:14px;
+  background:var(--s2);border:1px solid var(--border2);
+  border-radius:var(--r2);padding:14px 18px;
+  margin-top:14px;display:none;
+}
+.fext{
+  width:44px;height:44px;border-radius:8px;
+  background:linear-gradient(135deg,#c0392b,#8e1a12);
+  display:flex;align-items:center;justify-content:center;
+  font-size:.65rem;font-weight:700;color:#fff;
+  font-family:var(--mono);letter-spacing:1px;flex-shrink:0;
+}
+.fi2{flex:1}
+.fn{font-weight:600;font-size:.88rem;word-break:break-all}
+.fs{font-size:.72rem;color:var(--text2);font-family:var(--mono)}
+.frm{
+  background:none;border:none;cursor:pointer;
+  color:var(--text3);font-size:17px;
+  width:30px;height:30px;border-radius:5px;
+  display:flex;align-items:center;justify-content:center;
+  transition:all .2s;
+}
+.frm:hover{background:rgba(255,61,90,.12);color:var(--red)}
+
+/* ══ SETTINGS ══ */
+.sg{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:560px){.sg{grid-template-columns:1fr}}
+.field{display:flex;flex-direction:column;gap:5px}
+.field label{font-size:.75rem;color:var(--text2);font-family:var(--mono)}
+.field select,.field input[type=number]{
+  background:var(--s2);border:1px solid var(--border2);
+  border-radius:var(--r2);padding:9px 12px;
+  color:var(--text);font-family:var(--mono);font-size:.82rem;
+  appearance:none;transition:border-color .2s;
+}
+.field select:focus,.field input[type=number]:focus{
+  outline:none;border-color:var(--cyan);
+}
+
+.trow{
+  display:flex;align-items:center;justify-content:space-between;
+  background:var(--s2);border:1px solid var(--border);
+  border-radius:var(--r2);padding:12px 16px;
+}
+.tl{font-size:.83rem}
+.td{font-size:.7rem;color:var(--text2);margin-top:2px}
+.toggle{position:relative;width:42px;height:22px;flex-shrink:0}
+.toggle input{display:none}
+.ttrack{
+  position:absolute;inset:0;background:var(--border2);
+  border-radius:99px;cursor:pointer;transition:background .2s;
+}
+.tthumb{
+  position:absolute;width:16px;height:16px;background:#fff;
+  border-radius:50%;top:3px;left:3px;
+  transition:transform .2s;pointer-events:none;
+}
+.toggle input:checked+.ttrack{background:var(--cyan)}
+.toggle input:checked~.tthumb{transform:translateX(20px)}
+
+/* ══ BTN ══ */
+.btn-go{
+  width:100%;padding:15px;
+  background:linear-gradient(135deg,var(--cyan2),var(--cyan));
+  border:none;border-radius:var(--r2);
+  color:#000;font-weight:700;font-size:.95rem;
+  font-family:var(--ar);cursor:pointer;
+  margin-top:6px;transition:all .25s;position:relative;overflow:hidden;
+}
+.btn-go::before{
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(135deg,rgba(255,255,255,.18),transparent);
+}
+.btn-go:hover{transform:translateY(-1px);box-shadow:0 8px 24px rgba(0,212,255,.28)}
+.btn-go:active{transform:translateY(0)}
+.btn-go:disabled{opacity:.4;cursor:not-allowed;transform:none;box-shadow:none}
+
+/* ══ PROCESSING ══ */
+#proc{display:none}
+#proc.on{display:block}
+
+.stages{
+  display:flex;border:1px solid var(--border);
+  border-radius:var(--r2);overflow:hidden;margin-bottom:22px;
+}
+.stage{
+  flex:1;padding:11px 8px;text-align:center;
+  font-size:.68rem;color:var(--text3);
+  border-right:1px solid var(--border);transition:all .3s;
+}
+.stage:last-child{border-right:none}
+.stage .si{font-size:15px;display:block;margin-bottom:3px}
+.stage.act{background:rgba(0,212,255,.06);color:var(--cyan)}
+.stage.done{background:rgba(0,232,122,.04);color:var(--green)}
+
+.big-pct{
+  font-size:3.8rem;font-weight:700;
+  font-family:var(--mono);line-height:1;
+  background:linear-gradient(135deg,var(--cyan),var(--gold));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;
+}
+.pct-sub{font-size:.78rem;color:var(--text2);font-family:var(--mono);margin-top:2px}
+
+.btrack{
+  height:9px;background:var(--border);
+  border-radius:99px;overflow:hidden;margin:12px 0;
+}
+.bfill{
+  height:100%;width:0%;border-radius:99px;
+  background:linear-gradient(90deg,var(--cyan2),var(--cyan),var(--gold));
+  background-size:200% 100%;
+  animation:sh 2s linear infinite;
+  transition:width .4s ease;
+}
+@keyframes sh{0%{background-position:200% 0}100%{background-position:-200% 0}}
+
+.bfill.gold{background:linear-gradient(90deg,#c07800,var(--gold))}
+.bfill.green{background:linear-gradient(90deg,#00a857,var(--green));animation:none}
+
+.pg-counter{font-family:var(--mono);font-size:.78rem;color:var(--text2);margin-bottom:18px}
+.pg-counter span{color:var(--text);font-weight:600}
+
+/* log */
+.log{
+  background:#060810;border:1px solid var(--border);
+  border-radius:var(--r2);padding:12px 14px;
+  height:140px;overflow-y:auto;
+  font-family:var(--mono);font-size:.68rem;
+  color:var(--text2);direction:ltr;text-align:left;
+}
+.log .ll{margin-bottom:3px}
+.log .ts{color:var(--text3);margin-right:7px}
+.log .ok .msg{color:var(--green)}
+.log .er .msg{color:var(--red)}
+.log .in .msg{color:var(--cyan)}
+.log .wn .msg{color:var(--gold)}
+
+/* warning box */
+.warn-box{
+  background:rgba(245,166,35,.06);
+  border:1px solid rgba(245,166,35,.25);
+  border-radius:var(--r2);padding:14px 16px;
+  font-size:.8rem;color:var(--gold);
+  margin-bottom:16px;display:flex;gap:10px;align-items:flex-start;
+}
+
+/* ══ DOWNLOAD ══ */
+#dl{display:none}
+#dl.on{display:block}
+
+.ok-hero{text-align:center;padding:32px 16px}
+.ok-circle{
+  width:76px;height:76px;border-radius:50%;
+  background:rgba(0,232,122,.1);border:2px solid var(--green);
+  display:flex;align-items:center;justify-content:center;
+  font-size:34px;margin:0 auto 18px;
+  animation:pop .4s cubic-bezier(.175,.885,.32,1.275);
+}
+@keyframes pop{from{transform:scale(0);opacity:0}to{transform:scale(1);opacity:1}}
+.ok-title{font-size:1.25rem;font-weight:700;margin-bottom:6px}
+.ok-sub{font-size:.82rem;color:var(--text2)}
+
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:20px 0}
+.stat{
+  background:var(--s2);border:1px solid var(--border2);
+  border-radius:var(--r2);padding:14px 10px;text-align:center;
+}
+.sv{font-size:1.35rem;font-weight:700;font-family:var(--mono);color:var(--cyan)}
+.sl{font-size:.68rem;color:var(--text2);margin-top:3px}
+
+.btn-dl{
+  display:flex;align-items:center;justify-content:center;gap:10px;
+  width:100%;padding:15px;
+  background:linear-gradient(135deg,#00a857,var(--green));
+  border:none;border-radius:var(--r2);
+  color:#000;font-weight:700;font-size:.95rem;
+  font-family:var(--ar);cursor:pointer;
+  margin-bottom:10px;transition:all .25s;
+}
+.btn-dl:hover{transform:translateY(-1px);box-shadow:0 8px 24px rgba(0,232,122,.22)}
+
+.btn-rst{
+  width:100%;padding:11px;
+  background:var(--s2);border:1px solid var(--border2);
+  border-radius:var(--r2);color:var(--text2);
+  font-family:var(--ar);font-size:.88rem;cursor:pointer;transition:all .2s;
+}
+.btn-rst:hover{background:var(--border);color:var(--text)}
+
+/* info grid */
+.ig{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px}
+@media(max-width:580px){.ig{grid-template-columns:1fr}}
+.ii{
+  background:var(--s1);border:1px solid var(--border);
+  border-radius:var(--r2);padding:16px 14px;
+}
+.ii .ico{font-size:20px;margin-bottom:8px}
+.ii h4{font-size:.82rem;font-weight:600;margin-bottom:4px}
+.ii p{font-size:.72rem;color:var(--text2)}
+
+footer{
+  text-align:center;padding:24px 0;
+  font-size:.68rem;color:var(--text3);
+  border-top:1px solid var(--border);font-family:var(--mono);
+}
+
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:99px}
+
+/* status dot */
+.sdot{
+  width:9px;height:9px;border-radius:50%;
+  background:var(--cyan);
+  animation:pulse 1.4s ease-in-out infinite;flex-shrink:0;
+}
+.sdot.done{background:var(--green);animation:none}
+.sdot.err{background:var(--red);animation:none}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(1.4)}}
+
+.jrow{display:flex;align-items:center;gap:12px;margin-bottom:20px}
+.jname{font-size:.88rem;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* current page preview */
+.preview-wrap{
+  margin-bottom:16px;
+  background:var(--s2);border:1px solid var(--border);
+  border-radius:var(--r2);overflow:hidden;
+  display:none;
+}
+.preview-wrap.on{display:block}
+.preview-label{
+  font-size:.68rem;color:var(--text2);font-family:var(--mono);
+  padding:8px 12px;border-bottom:1px solid var(--border);
+}
+#preview-canvas{width:100%;display:block;max-height:220px;object-fit:contain;background:#000}
+</style>
+</head>
+
+<body>
+<div class="wrap">
+
+<!-- HEADER -->
+<header>
+  <div class="logo">
+    <div class="logo-icon">📄</div>
+    <div>
+      <h1>OCR Enterprise</h1>
+      <span>PDF → DOCX · 100% Browser · No Server</span>
+    </div>
+  </div>
+  <p class="tagline">يعمل مباشرة في المتصفح — بدون سيرفر، بدون رفع بيانات، بدون إنترنت بعد التحميل</p>
+  <div class="badges">
+    <span class="badge c">Tesseract.js</span>
+    <span class="badge c">PDF.js</span>
+    <span class="badge g">Arabic RTL ✓</span>
+    <span class="badge g">No Server</span>
+    <span class="badge gr">GitHub Pages ✓</span>
+    <span class="badge gr">100% Free</span>
+  </div>
+</header>
+
+<!-- INFO -->
+<div class="ig">
+  <div class="ii"><div class="ico">🔒</div><h4>خصوصية كاملة</h4><p>ملفاتك لا تغادر جهازك أبداً — كل شيء في المتصفح</p></div>
+  <div class="ii"><div class="ico">🌍</div><h4>عربي + إنجليزي</h4><p>OCR ثنائي اللغة مع دعم RTL كامل في ملف Word</p></div>
+  <div class="ii"><div class="ico">⚡</div><h4>معالجة صفحة بصفحة</h4><p>لا يتجمد المتصفح — شريط تقدم حي لكل صفحة</p></div>
+</div>
+
+<!-- UPLOAD -->
+<div class="card glow" id="upload-card">
+  <div class="ch">
+    <div class="ci">📤</div>
+    <div><div class="ct">رفع ملف PDF</div><div class="cs">حتى 200 MB — يعمل 100% بدون إنترنت بعد تحميل الصفحة</div></div>
+  </div>
+  <div class="dz" id="dz">
+    <span class="dz-icon">📚</span>
+    <div class="dz-label">اسحب الملف هنا أو اضغط للاختيار</div>
+    <div class="dz-hint">PDF — كتب، مقالات، وثائق عربية وإنجليزية</div>
+    <div class="dz-note">كل المعالجة تتم داخل متصفحك — لا رفع، لا سيرفر</div>
+    <input type="file" id="fi" accept=".pdf"/>
+  </div>
+  <div class="frow" id="frow">
+    <div class="fext">PDF</div>
+    <div class="fi2">
+      <div class="fn" id="fn">—</div>
+      <div class="fs" id="fs">—</div>
+    </div>
+    <button class="frm" id="frm">✕</button>
+  </div>
+</div>
+
+<!-- SETTINGS -->
+<div class="card" id="settings-card">
+  <div class="ch">
+    <div class="ci">⚙️</div>
+    <div><div class="ct">إعدادات المعالجة</div><div class="cs">تحكم في جودة OCR والسرعة</div></div>
+  </div>
+
+  <div class="sg" style="margin-bottom:14px">
+    <div class="field">
+      <label>لغة OCR</label>
+      <select id="cfg-lang">
+        <option value="ara+eng" selected>عربي + إنجليزي</option>
+        <option value="ara">عربي فقط</option>
+        <option value="eng">إنجليزي فقط</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>دقة الرسم DPI</label>
+      <select id="cfg-dpi">
+        <option value="1.5">150 — سريع</option>
+        <option value="2" selected>200 — متوازن (افتراضي)</option>
+        <option value="2.5">250 — جودة عالية</option>
+        <option value="3">300 — أعلى جودة (أبطأ)</option>
+      </select>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px">
+    <div class="trow">
+      <div><div class="tl">فاصل صفحة بعد كل PDF page</div><div class="td">يحافظ على تخطيط الكتاب في Word</div></div>
+      <label class="toggle"><input type="checkbox" id="cfg-pb" checked/><div class="ttrack"></div><div class="tthumb"></div></label>
+    </div>
+    <div class="trow">
+      <div><div class="tl">تضمين صور الصفحات</div><div class="td">يضيف صورة الصفحة فوق النص في Word</div></div>
+      <label class="toggle"><input type="checkbox" id="cfg-img" checked/><div class="ttrack"></div><div class="tthumb"></div></label>
+    </div>
+  </div>
+
+  <button class="btn-go" id="btn-go" disabled>🚀 &nbsp; ابدأ التحويل</button>
+</div>
+
+<!-- PROCESSING -->
+<div class="card" id="proc">
+  <div class="ch">
+    <div class="ci">⚡</div>
+    <div><div class="ct">جارٍ المعالجة</div><div class="cs" id="proc-sub">تهيئة…</div></div>
+  </div>
+
+  <div class="warn-box">
+    ⚠️ &nbsp; لا تغلق هذه النافذة أثناء المعالجة — OCR يعمل داخل المتصفح ويحتاج وقتاً حسب حجم الكتاب
+  </div>
+
+  <div class="jrow">
+    <div class="sdot" id="sdot"></div>
+    <div class="jname" id="jname">—</div>
+  </div>
+
+  <!-- Stages -->
+  <div class="stages">
+    <div class="stage act" id="st-load"><span class="si">📂</span>تحميل</div>
+    <div class="stage"     id="st-ocr" ><span class="si">🔍</span>OCR</div>
+    <div class="stage"     id="st-doc" ><span class="si">📝</span>Word</div>
+    <div class="stage"     id="st-done"><span class="si">✅</span>مكتمل</div>
+  </div>
+
+  <!-- Big % -->
+  <div style="display:flex;align-items:flex-end;gap:10px;margin-bottom:8px">
+    <div class="big-pct" id="big-pct">0%</div>
+    <div style="padding-bottom:10px">
+      <div class="pct-sub" id="eta">جارٍ التهيئة…</div>
+    </div>
+  </div>
+
+  <div class="btrack"><div class="bfill" id="main-bar"></div></div>
+  <div class="pg-counter">صفحة <span id="pg-done">0</span> من <span id="pg-tot">0</span></div>
+
+  <!-- Page preview -->
+  <div class="preview-wrap" id="preview-wrap">
+    <div class="preview-label" id="preview-label">معاينة الصفحة الحالية</div>
+    <canvas id="preview-canvas"></canvas>
+  </div>
+
+  <!-- Log -->
+  <div class="log" id="log"></div>
+</div>
+
+<!-- DOWNLOAD -->
+<div class="card glow" id="dl">
+  <div class="ok-hero">
+    <div class="ok-circle">✅</div>
+    <div class="ok-title">اكتمل التحويل بنجاح!</div>
+    <div class="ok-sub">ملف Word جاهز — يحتوي على النص كامل مع دعم RTL</div>
+  </div>
+  <div class="stats">
+    <div class="stat"><div class="sv" id="st-pages">—</div><div class="sl">صفحات</div></div>
+    <div class="stat"><div class="sv" id="st-time">—</div><div class="sl">وقت المعالجة</div></div>
+    <div class="stat"><div class="sv" id="st-chars">—</div><div class="sl">حرف مستخرج</div></div>
+  </div>
+  <button class="btn-dl" id="btn-dl">⬇️ &nbsp; تحميل ملف Word</button>
+  <button class="btn-rst" id="btn-rst">🔄 &nbsp; تحويل ملف جديد</button>
+</div>
+
+<footer>OCR Enterprise · 100% Browser-Based · No Server · Arabic + English · GitHub Pages Ready</footer>
+</div>
+
+<!-- ══════════════════════════════════════════
+     JAVASCRIPT
+══════════════════════════════════════════ -->
+<script>
+// ── PDF.js worker ─────────────────────────────────────────────────────────
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+// ── State ─────────────────────────────────────────────────────────────────
+let selFile   = null;
+let startTime = 0;
+let finalBlob = null;
+let totalChars= 0;
+let aborted   = false;
+
+// ── DOM ───────────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const dz = $('dz');
+
+// ── File handling ─────────────────────────────────────────────────────────
+dz.onclick = () => $('fi').click();
+dz.ondragover = e => { e.preventDefault(); dz.classList.add('over'); };
+dz.ondragleave = () => dz.classList.remove('over');
+dz.ondrop = e => {
+  e.preventDefault(); dz.classList.remove('over');
+  const f = e.dataTransfer.files[0];
+  if (f?.type === 'application/pdf') setFile(f);
+  else alert('يرجى اختيار ملف PDF فقط');
+};
+$('fi').onchange = e => { if (e.target.files[0]) setFile(e.target.files[0]); };
+$('frm').onclick = e => { e.stopPropagation(); clearFile(); };
+
+function setFile(f) {
+  selFile = f;
+  $('fn').textContent = f.name;
+  $('fs').textContent = `${(f.size/1048576).toFixed(2)} MB`;
+  $('frow').style.display = 'flex';
+  $('btn-go').disabled = false;
+  log('in', `تم اختيار: ${f.name}`);
+}
+function clearFile() {
+  selFile = null;
+  $('frow').style.display = 'none';
+  $('btn-go').disabled = true;
+  $('fi').value = '';
+}
+
+// ── Start ─────────────────────────────────────────────────────────────────
+$('btn-go').onclick = startConversion;
+
+async function startConversion() {
+  if (!selFile) return;
+  aborted   = false;
+  startTime = Date.now();
+  totalChars= 0;
+  finalBlob = null;
+
+  $('btn-go').disabled = true;
+  $('proc').classList.add('on');
+  $('jname').textContent = selFile.name;
+  setStage('load');
+  log('in', 'بدء قراءة PDF…');
+
+  try {
+    const lang      = $('cfg-lang').value;
+    const scale     = parseFloat($('cfg-dpi').value);
+    const pageBreaks= $('cfg-pb').checked;
+    const embedImgs = $('cfg-img').checked;
+
+    // ── 1. Load PDF ───────────────────────────────────────────────────────
+    const ab  = await selFile.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: ab }).promise;
+    const totalPages = pdf.numPages;
+
+    $('pg-tot').textContent = totalPages;
+    log('ok', `PDF محمّل · ${totalPages} صفحة`);
+    setStage('ocr');
+    $('proc-sub').textContent = 'OCR جارٍ…';
+
+    // ── 2. Init Tesseract worker ─────────────────────────────────────────
+    log('in', `تهيئة Tesseract (${lang})…`);
+    const worker = await Tesseract.createWorker(lang, 1, {
+      logger: m => {
+        if (m.status === 'recognizing text') {
+          const p = Math.round(m.progress * 100);
+          $('eta').textContent = `OCR صفحة … ${p}%`;
+        }
+      }
+    });
+    await worker.setParameters({
+      tessedit_pageseg_mode: Tesseract.PSM.AUTO,
+    });
+    log('ok', 'Tesseract جاهز ✓');
+
+    // ── 3. Process pages ─────────────────────────────────────────────────
+    const pageResults = [];
+
+    for (let i = 1; i <= totalPages; i++) {
+      if (aborted) break;
+
+      $('pg-done').textContent = i;
+      updateBar(((i-1)/totalPages)*100);
+
+      const page    = await pdf.getPage(i);
+      const viewport= page.getViewport({ scale });
+
+      // Render to canvas
+      const canvas  = document.createElement('canvas');
+      canvas.width  = viewport.width;
+      canvas.height = viewport.height;
+      const ctx     = canvas.getContext('2d');
+      await page.render({ canvasContext: ctx, viewport }).promise;
+
+      // Show preview
+      showPreview(canvas, i, totalPages);
+
+      // Try native text first
+      const textContent = await page.getTextContent();
+      let nativeText = textContent.items.map(it => it.str).join(' ').trim();
+
+      let finalText = '';
+      let isRTL     = false;
+
+      if (nativeText.length > 60) {
+        finalText = nativeText;
+        isRTL     = detectRTL(nativeText);
+        log('in', `صفحة ${i}/${totalPages} — نص أصلي (${nativeText.length} حرف)`);
+      } else {
+        // OCR
+        log('in', `صفحة ${i}/${totalPages} — OCR جارٍ…`);
+        const { data } = await worker.recognize(canvas);
+        finalText = data.text.trim();
+        isRTL     = detectRTL(finalText);
+        log('ok', `صفحة ${i}/${totalPages} — OCR ✓ (${finalText.length} حرف)`);
+      }
+
+      totalChars += finalText.length;
+      updateBar((i/totalPages)*100);
+
+      // ETA
+      const elapsed = (Date.now() - startTime) / 1000;
+      const rate    = i / elapsed;
+      const rem     = (totalPages - i) / rate;
+      $('eta').textContent = rem > 60
+        ? `~${Math.ceil(rem/60)} دقيقة متبقية`
+        : `~${Math.ceil(rem)} ثانية متبقية`;
+
+      // Save canvas as dataURL if embed images enabled
+      let imgDataUrl = null;
+      if (embedImgs) {
+        imgDataUrl = canvas.toDataURL('image/jpeg', 0.82);
+      }
+
+      pageResults.push({ pageNum: i, text: finalText, isRTL, imgDataUrl });
+
+      // Free memory
+      canvas.width = canvas.height = 0;
+    }
+
+    await worker.terminate();
+    log('ok', `OCR مكتمل · ${totalChars.toLocaleString()} حرف إجمالاً`);
+
+    // ── 4. Build DOCX ─────────────────────────────────────────────────────
+    setStage('doc');
+    $('proc-sub').textContent = 'بناء ملف Word…';
+    log('in', 'بناء ملف Word…');
+
+    const blob = await buildDocx(pageResults, selFile.name, pageBreaks, embedImgs);
+    finalBlob  = blob;
+
+    // ── 5. Done ───────────────────────────────────────────────────────────
+    setStage('done');
+    $('sdot').className = 'sdot done';
+    $('proc-sub').textContent = 'اكتمل!';
+    $('preview-wrap').classList.remove('on');
+    log('ok', '✅ ملف Word جاهز للتحميل');
+
+    const elapsed = Math.round((Date.now() - startTime) / 1000);
+    $('st-pages').textContent = totalPages;
+    $('st-time').textContent  = elapsed > 60
+      ? `${Math.floor(elapsed/60)}م${elapsed%60}ث` : `${elapsed}ث`;
+    $('st-chars').textContent = totalChars > 1000
+      ? `${(totalChars/1000).toFixed(1)}k` : totalChars;
+
+    $('dl').classList.add('on');
+
+  } catch(err) {
+    $('sdot').className = 'sdot err';
+    $('proc-sub').textContent = 'حدث خطأ';
+    log('er', `خطأ: ${err.message}`);
+    console.error(err);
+  }
+}
+
+// ── Build DOCX ────────────────────────────────────────────────────────────
+async function buildDocx(pages, filename, pageBreaks, embedImgs) {
+  const { Document, Paragraph, TextRun, ImageRun,
+          PageBreak, AlignmentType, HeadingLevel,
+          Packer, BorderStyle } = docx;
+
+  const children = [];
+
+  // Cover title
+  children.push(new Paragraph({
+    text: `OCR: ${filename}`,
+    heading: HeadingLevel.TITLE,
+    alignment: AlignmentType.CENTER,
+  }));
+  children.push(new Paragraph({
+    children: [new TextRun({
+      text: `${pages.length} pages · Generated by OCR Enterprise`,
+      color: '888888', size: 20,
+    })],
+    alignment: AlignmentType.CENTER,
+  }));
+  children.push(new Paragraph({ children: [new PageBreak()] }));
+
+  for (let i = 0; i < pages.length; i++) {
+    const p = pages[i];
+
+    // Page label
+    children.push(new Paragraph({
+      children: [new TextRun({
+        text: p.isRTL ? `— صفحة ${p.pageNum} —` : `— Page ${p.pageNum} —`,
+        color: '999999', size: 18,
+      })],
+      alignment: p.isRTL ? AlignmentType.RIGHT : AlignmentType.LEFT,
+    }));
+
+    // Image
+    if (embedImgs && p.imgDataUrl) {
+      try {
+        const imgData = dataUrlToUint8Array(p.imgDataUrl);
+        children.push(new Paragraph({
+          children: [new ImageRun({
+            data: imgData,
+            transformation: { width: 500, height: Math.round(500 * 1.414) },
+            type: 'jpg',
+          })],
+          alignment: AlignmentType.CENTER,
+        }));
+      } catch(e) { /* skip image on error */ }
+    }
+
+    // Text paragraphs
+    const paras = p.text.split('\n').filter(l => l.trim());
+    if (paras.length === 0) {
+      children.push(new Paragraph({
+        children: [new TextRun({ text: '[empty page]', color: 'CCCCCC', size: 20 })],
+      }));
+    } else {
+      for (const line of paras) {
+        const rtl = detectRTL(line);
+        children.push(new Paragraph({
+          children: [new TextRun({
+            text: line,
+            size: 22,
+            font: rtl ? 'Traditional Arabic' : 'Calibri',
+            rightToLeft: rtl,
+          })],
+          alignment: rtl ? AlignmentType.RIGHT : AlignmentType.LEFT,
+          bidirectional: rtl,
+        }));
+      }
+    }
+
+    // Page break
+    if (pageBreaks && i < pages.length - 1) {
+      children.push(new Paragraph({ children: [new PageBreak()] }));
+    }
+  }
+
+  const doc = new Document({
+    sections: [{
+      properties: {},
+      children,
+    }],
+  });
+
+  return await Packer.toBlob(doc);
+}
+
+// ── Download ──────────────────────────────────────────────────────────────
+$('btn-dl').onclick = () => {
+  if (!finalBlob) return;
+  const name = (selFile?.name || 'output').replace(/\.pdf$/i,'') + '_ocr.docx';
+  saveAs(finalBlob, name);
+  log('ok', `تم حفظ: ${name}`);
+};
+
+$('btn-rst').onclick = () => {
+  aborted = true;
+  $('proc').classList.remove('on');
+  $('dl').classList.remove('on');
+  $('preview-wrap').classList.remove('on');
+  $('btn-go').disabled = false;
+  clearFile();
+  $('pg-done').textContent = '0';
+  $('pg-tot').textContent  = '0';
+  $('big-pct').textContent = '0%';
+  $('main-bar').style.width = '0%';
+  $('eta').textContent = '—';
+  $('sdot').className = 'sdot';
+  $('log').innerHTML  = '';
+  finalBlob = null;
+  ['st-load','st-ocr','st-doc','st-done'].forEach((id,i) => {
+    document.getElementById(id).className = 'stage' + (i===0?' act':'');
+  });
+};
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+function detectRTL(text) {
+  const ar  = (text.match(/[\u0600-\u06FF]/g) || []).length;
+  const lat = (text.match(/[a-zA-Z]/g) || []).length;
+  return ar > lat && ar > 2;
+}
+
+function dataUrlToUint8Array(dataUrl) {
+  const base64 = dataUrl.split(',')[1];
+  const binary = atob(base64);
+  const arr    = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
+  return arr;
+}
+
+function updateBar(pct) {
+  pct = Math.min(100, Math.max(0, pct));
+  $('main-bar').style.width   = pct + '%';
+  $('big-pct').textContent    = Math.round(pct) + '%';
+}
+
+function showPreview(canvas, pageNum, total) {
+  const wrap = $('preview-wrap');
+  const out  = $('preview-canvas');
+  $('preview-label').textContent = `معاينة — صفحة ${pageNum} من ${total}`;
+  const ctx = out.getContext('2d');
+  out.width  = canvas.width;
+  out.height = canvas.height;
+  ctx.drawImage(canvas, 0, 0);
+  wrap.classList.add('on');
+}
+
+const STAGES = ['load','ocr','doc','done'];
+function setStage(active) {
+  const idx = STAGES.indexOf(active);
+  STAGES.forEach((s,i) => {
+    const el = document.getElementById(`st-${s}`);
+    el.className = 'stage' + (i < idx ? ' done' : i === idx ? ' act' : '');
+  });
+}
+
+function log(type, msg) {
+  const t   = new Date().toLocaleTimeString('en-GB');
+  const div = document.createElement('div');
+  div.className = `ll ${type}`;
+  div.innerHTML = `<span class="ts">[${t}]</span><span class="msg">${msg}</span>`;
+  const el = $('log');
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+}
+
+log('in', 'النظام جاهز — اختر ملف PDF للبدء');
+</script>
+</body>
+</html>
